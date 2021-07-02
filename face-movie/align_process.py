@@ -5,6 +5,7 @@ import dlib
 import numpy as np
 import argparse
 import os
+import pickle
 
 PREDICTOR_PATH = "./shape_predictor_68_face_landmarks.dat"
 
@@ -21,55 +22,12 @@ JAW_POINTS = list(range(0, 17))
 ALIGN_POINTS = (LEFT_BROW_POINTS + RIGHT_EYE_POINTS + LEFT_EYE_POINTS +
                     RIGHT_BROW_POINTS + NOSE_POINTS + MOUTH_POINTS)
 
-
 DETECTOR = dlib.get_frontal_face_detector()
 PREDICTOR = dlib.shape_predictor(PREDICTOR_PATH)
 
-cache = dict()
-
-def prompt_user_to_choose_face(im, rects):
-    im = im.copy()
-    h, w = im.shape[:2]
-    for i in range(len(rects)):
-        d = rects[i]
-        x1, y1, x2, y2 = d.left(), d.top(), d.right()+1, d.bottom()+1
-        cv2.rectangle(im, (x1, y1), (x2, y2), color=(255, 0, 0), thickness=5)
-        cv2.putText(im, str(i), (d.center().x, d.center().y),
-                    fontFace=cv2.FONT_HERSHEY_SCRIPT_SIMPLEX,
-                    fontScale=1.5,
-                    color=(255, 255, 255),
-                    thickness=5)
-
-    DISPLAY_HEIGHT = 650
-    resized = cv2.resize(im, (int(w * DISPLAY_HEIGHT / float(h)), DISPLAY_HEIGHT))
-    cv2.imshow("Multiple faces", resized); cv2.waitKey(1)
-    target_index = int(input("Please choose the index of the target face: "))
-    cv2.destroyAllWindows(); cv2.waitKey(1)
-    return rects[target_index]
-
-def get_landmarks(im):
-    rects = DETECTOR(im, 1)
-    if len(rects) == 0 and len(DETECTOR(im, 0)) > 0:
-        rects = DETECTOR(im, 0)
-    if not len(rects) > 0:
-        return False
-    target_rect = rects[0] 
-    if len(rects) > 1:
-        target_rect = prompt_user_to_choose_face(im, rects)
+def get_landmarks(im, target_rect):
     res = np.matrix([[p.x, p.y] for p in PREDICTOR(im, target_rect).parts()])
     return res
-
-def annotate_landmarks(im, landmarks):
-    im = im.copy()
-    for idx, point in enumerate(landmarks):
-        pos = (point[0], point[1])
-        cv2.putText(im, str(idx+1), pos,
-                    fontFace=cv2.FONT_HERSHEY_SCRIPT_SIMPLEX,
-                    fontScale=0.4,
-                    color=(255, 255, 255))
-        cv2.circle(im, pos, 3, color=(255, 0, 0))
-    cv2.imwrite("landmarks.jpg", im)
-
     
 def transformation_from_points(points1, points2):
     """
@@ -109,15 +67,9 @@ def transformation_from_points(points1, points2):
     return np.vstack([np.hstack(((s2 / s1) * R, c2.T - (s2 / s1) * R * c1.T)),
                       np.matrix([0., 0., 1.])])
 
-def read_im_and_landmarks(fname):
-    if fname in cache:
-        return cache[fname]
+def read_im_and_landmarks(fname, rects):
     im = cv2.imread(fname, cv2.IMREAD_COLOR)
-    s = get_landmarks(im)
-    # print(type(s).__name__)
-    if type(s).__name__!="matrix":
-        return False, False
-    cache[fname] = (im, s)
+    s = get_landmarks(im, rects)
     return im, s
 
 def warp_im(im, M, dshape, prev):
@@ -139,13 +91,22 @@ def warp_im(im, M, dshape, prev):
 
 
 def align_images(impath1, impath2, border, prev=None):
-    im1, landmarks1 = read_im_and_landmarks(impath1)
-    im2, landmarks2 = read_im_and_landmarks(impath2)
     filename = os.path.basename(impath2).split('.')[0]
-    # print(type(im2).__name__)
-    if type(im2).__name__!="ndarray":
-        print("No faces in {}".format(filename))
-        return False
+    ext = os.path.basename(impath2).split('.')[1]
+    read_rects = "{}/rects/{}.{}.rects".format(OUTPUT_DIR, filename, ext)
+    with open(read_rects, 'rb') as fp:
+        rects = pickle.load(fp)
+    if len(rects)==0:
+        return prev
+    elif len(rects)>1:
+        rects=rects[answers["{}_annotated.jpg".format(im)]]
+    elif len(rects)==1:
+        rects=rects[0]
+    im2, landmarks2 = read_im_and_landmarks(impath2, rects)
+
+    filename = os.path.basename(impath2).split('.')[0]
+    ext = os.path.basename(impath2).split('.')[1]
+    
     T = transformation_from_points(landmarks1[ALIGN_POINTS],
                                    landmarks2[ALIGN_POINTS])
 
@@ -156,9 +117,8 @@ def align_images(impath1, impath2, border, prev=None):
             borderType=cv2.BORDER_CONSTANT, value=(255,255,255))
 
     warped_im2 = warp_im(im2, M, im1.shape, prev)
-
     
-    cv2.imwrite("{}/{}.jpg".format(OUTPUT_DIR, filename), warped_im2)
+    cv2.imwrite("{}/{}.{}.jpg".format(OUTPUT_DIR, filename,ext), warped_im2)
     print("Aligned {}".format(filename))
     return warped_im2
 
@@ -176,6 +136,10 @@ if __name__ == "__main__":
     border = args["border"]
     OUTPUT_DIR = args["outdir"]
 
+    answers_file = "{}/rects/answers".format(OUTPUT_DIR)
+    with open (answers_file, 'rb') as fp:
+        answers = pickle.load(fp)
+
     valid_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".heic"]
     get_ext = lambda f: os.path.splitext(f)[1].lower()
 
@@ -187,9 +151,16 @@ if __name__ == "__main__":
     
     im_files = [f for f in os.listdir(im_dir) if get_ext(f) in valid_formats]
     im_files = sorted(im_files, key=lambda x: x.split('/'))
+
+    filename = os.path.basename(target).split('.')[0]
+    ext = os.path.basename(target).split('.')[1]
+    read_rects = "{}/rects/{}.{}.rects".format(OUTPUT_DIR, filename, ext)
+    with open(read_rects, 'rb') as fp:
+        rects = pickle.load(fp)
+    im1, landmarks1 = read_im_and_landmarks(target, rects[0])
+
     for im in im_files:
         if overlay:
             prev = align_images(target, im_dir + '/' + im, border, prev)
         else:
             align_images(target, im_dir + '/' + im, border)
-

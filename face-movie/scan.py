@@ -5,6 +5,7 @@ import dlib
 import numpy as np
 import argparse
 import os
+import shutil
 
 PREDICTOR_PATH = "./shape_predictor_68_face_landmarks.dat"
 
@@ -51,13 +52,12 @@ def get_landmarks(im):
     rects = DETECTOR(im, 1)
     if len(rects) == 0 and len(DETECTOR(im, 0)) > 0:
         rects = DETECTOR(im, 0)
-    if not len(rects) > 0:
-        return False
-    target_rect = rects[0] 
-    if len(rects) > 1:
-        target_rect = prompt_user_to_choose_face(im, rects)
-    res = np.matrix([[p.x, p.y] for p in PREDICTOR(im, target_rect).parts()])
-    return res
+    return len(rects)
+    # target_rect = rects[0] 
+    # if len(rects) > 1:
+    #     target_rect = prompt_user_to_choose_face(im, rects)
+    # res = np.matrix([[p.x, p.y] for p in PREDICTOR(im, target_rect).parts()])
+    # return res
 
 def annotate_landmarks(im, landmarks):
     im = im.copy()
@@ -110,15 +110,56 @@ def transformation_from_points(points1, points2):
                       np.matrix([0., 0., 1.])])
 
 def read_im_and_landmarks(fname):
-    if fname in cache:
-        return cache[fname]
     im = cv2.imread(fname, cv2.IMREAD_COLOR)
+    print(fname)
     s = get_landmarks(im)
-    # print(type(s).__name__)
-    if type(s).__name__!="matrix":
-        return False, False
-    cache[fname] = (im, s)
-    return im, s
+    print("\t{} face(s)".format(s))
+    if s==0:
+        print("\tRotating 90 degress clockwise")
+        im=cv2.rotate(im,cv2.ROTATE_90_CLOCKWISE)
+        s = get_landmarks(im)
+        print("\t\t{} face(s)".format(s))
+        if s==0:
+            print("\tRotating 180 degress")
+            im=cv2.rotate(im,cv2.ROTATE_90_CLOCKWISE)
+            s = get_landmarks(im)
+            print("\t\t{} face(s)".format(s))
+            if s==0:
+                print("\tRotating 90 degress counter clockwise")
+                im=cv2.rotate(im,cv2.ROTATE_90_CLOCKWISE)
+                s = get_landmarks(im)
+                print("\t\t{} faces".format(s))
+        if s==0:
+            filename = os.path.basename(im_name).split('.')[0]
+            ext = os.path.basename(im_name).split('.')[1]
+            out = "{}/{}.{}".format(no_dir, filename, ext)
+            if (os.path.exists(out)):
+                print ("{} exists!".format(out))
+            print("\tCopying {} to {}".format(fname,out, ext))
+            shutil.copy2(fname, out)
+        else:
+            filename = os.path.basename(im_name).split('.')[0]
+            ext = os.path.basename(im_name).split('.')[1]
+            if ext=="HEIC":
+                ext = "HEIC.jpg"
+            out = "{}/{}_rotated.{}".format(yes_dir, filename, ext)
+            if (os.path.exists(out)):
+                print ("{} exists!".format(out))
+            print("Writing rotated image to {}".format(out))
+            cv2.imwrite(out, im)
+
+    else:
+        filename = os.path.basename(im_name).split('.')[0]
+        ext = os.path.basename(im_name).split('.')[1]
+        out = "{}/{}.{}".format(yes_dir, filename, ext)
+        if (os.path.exists(out)):
+            print ("{} exists!".format(out))
+        print("\tCopying {} to {}".format(fname,out))
+        shutil.copy2(fname, out)
+
+
+
+
 
 def warp_im(im, M, dshape, prev):
     output_im = cv2.warpAffine(
@@ -141,11 +182,7 @@ def warp_im(im, M, dshape, prev):
 def align_images(impath1, impath2, border, prev=None):
     im1, landmarks1 = read_im_and_landmarks(impath1)
     im2, landmarks2 = read_im_and_landmarks(impath2)
-    filename = os.path.basename(impath2).split('.')[0]
-    # print(type(im2).__name__)
-    if type(im2).__name__!="ndarray":
-        print("No faces in {}".format(filename))
-        return False
+
     T = transformation_from_points(landmarks1[ALIGN_POINTS],
                                    landmarks2[ALIGN_POINTS])
 
@@ -157,39 +194,37 @@ def align_images(impath1, impath2, border, prev=None):
 
     warped_im2 = warp_im(im2, M, im1.shape, prev)
 
-    
+    filename = os.path.basename(impath2).split('.')[0]
     cv2.imwrite("{}/{}.jpg".format(OUTPUT_DIR, filename), warped_im2)
     print("Aligned {}".format(filename))
     return warped_im2
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("-images", help="Directory of images to be aligned", required=True)
-    ap.add_argument("-target", help="Path to target image to which all others will be aligned", required=True)
-    ap.add_argument("-overlay", help="Flag to overlay images on top of each other", action='store_true')
-    ap.add_argument("-border", type=int, help="Border size (in pixels) to be added to images")
-    ap.add_argument("-outdir", help="Output directory name", required=True)
+    ap.add_argument("-images", help="Directory of images to be scanned", required=True)
+    # ap.add_argument("-target", help="Path to target image to which all others will be aligned", required=True)
+    # ap.add_argument("-overlay", help="Flag to overlay images on top of each other", action='store_true')
+    # ap.add_argument("-border", type=int, help="Border size (in pixels) to be added to images")
+    # ap.add_argument("-outdir", help="Output directory name", required=True)
     args = vars(ap.parse_args())
     im_dir = args["images"]
-    target = args["target"]
-    overlay = args["overlay"]
-    border = args["border"]
-    OUTPUT_DIR = args["outdir"]
-
+    # target = args["target"]
+    # overlay = args["overlay"]
+    # border = args["border"]
+    # OUTPUT_DIR = args["outdir"]
+    yes_dir = "{}/yes_face".format(im_dir)
+    no_dir = "{}/no_face".format(im_dir)
     valid_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".heic"]
     get_ext = lambda f: os.path.splitext(f)[1].lower()
 
-    prev = None
+    # prev = None
 
-    # Constraints on input images (for aligning):
-    # - Must have clear frontal view of a face (there may be multiple)
-    # - Filenames must be in lexicographic order of the order in which they are to appear  
+    # # Constraints on input images (for aligning):
+    # # - Must have clear frontal view of a face (there may be multiple)
+    # # - Filenames must be in lexicographic order of the order in which they are to appear  
     
     im_files = [f for f in os.listdir(im_dir) if get_ext(f) in valid_formats]
     im_files = sorted(im_files, key=lambda x: x.split('/'))
-    for im in im_files:
-        if overlay:
-            prev = align_images(target, im_dir + '/' + im, border, prev)
-        else:
-            align_images(target, im_dir + '/' + im, border)
+    for im_name in im_files:
+        read_im_and_landmarks(im_dir + '/' + im_name)
 

@@ -1,5 +1,5 @@
 # USAGE: python face-movie/main.py (-morph | -average) -images IMAGES [-td TD] [-pd PD] [-fps FPS] -out OUT
-
+print("Importing libraries...")
 from scipy.spatial import Delaunay
 from PIL import Image
 from face_morph import morph_seq, warp_im
@@ -10,11 +10,13 @@ import dlib
 import os
 import cv2
 import time
+import pickle
 
 ########################################
 # FACIAL LANDMARK DETECTION CODE
 ########################################
 
+print("Loading ml code...")
 PREDICTOR_PATH = "./shape_predictor_68_face_landmarks.dat"
 DETECTOR = dlib.get_frontal_face_detector()
 PREDICTOR = dlib.shape_predictor(PREDICTOR_PATH)
@@ -44,23 +46,32 @@ def get_landmarks(im):
     return landmarks
 
 def prompt_user_to_choose_face(im, rects):
-    im = im.copy()
-    h, w = im.shape[:2]
-    for i in range(len(rects)):
-        d = rects[i]
-        x1, y1, x2, y2 = d.left(), d.top(), d.right()+1, d.bottom()+1
-        cv2.rectangle(im, (x1, y1), (x2, y2), color=(255, 0, 0), thickness=5)
-        cv2.putText(im, str(i), (d.center().x, d.center().y),
-                    fontFace=cv2.FONT_HERSHEY_SCRIPT_SIMPLEX,
-                    fontScale=1.5,
-                    color=(255, 255, 255),
-                    thickness=5)
+    # im = im.copy()
+    # h, w = im.shape[:2]
+    # for i in range(len(rects)):
+    #     d = rects[i]
+    #     x1, y1, x2, y2 = d.left(), d.top(), d.right()+1, d.bottom()+1
+    #     cv2.rectangle(im, (x1, y1), (x2, y2), color=(255, 0, 0), thickness=5)
+    #     cv2.putText(im, str(i), (d.center().x, d.center().y),
+    #                 fontFace=cv2.FONT_HERSHEY_SCRIPT_SIMPLEX,
+    #                 fontScale=1.5,
+    #                 color=(255, 255, 255),
+    #                 thickness=5)
 
-    DISPLAY_HEIGHT = 650
-    resized = cv2.resize(im, (int(w * DISPLAY_HEIGHT / float(h)), DISPLAY_HEIGHT))
-    cv2.imshow("Multiple faces", resized); cv2.waitKey(1)
-    target_index = int(input("Please choose the index of the target face: "))
-    cv2.destroyAllWindows(); cv2.waitKey(1)
+    # DISPLAY_HEIGHT = 650
+    # resized = cv2.resize(im, (int(w * DISPLAY_HEIGHT / float(h)), DISPLAY_HEIGHT))
+    # cv2.imshow("Multiple faces", resized); cv2.waitKey(1)
+    # target_index = int(input("Please choose the index of the target face: "))
+    # cv2.destroyAllWindows(); cv2.waitKey(1)
+
+    dist=[]
+    for rect in rects:
+        x1, y1, x2, y2 = rect.left(), rect.top(), rect.right()+1, rect.bottom()+1
+        rect_center = rect.center()
+        dist.append ( np.sqrt((target_rect_center.x-rect_center.x)**2 + (target_rect_center.y-rect_center.y)**2))
+    target_index = dist.index(min(dist))
+
+
     return rects[target_index] 
 
 ########################################
@@ -178,6 +189,7 @@ def cross_dissolve(total_frames, im1, im2, p):
 
 if __name__ == "__main__":
     start_time = time.time()
+    print("Loading arguments....")
     ap = argparse.ArgumentParser()
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("-morph", help="Create morph sequence", action='store_true')
@@ -187,6 +199,7 @@ if __name__ == "__main__":
     ap.add_argument("-pd", type=float, help="Pause duration (in seconds)", default=0.0)
     ap.add_argument("-fps", type=int, help="Frames per second", default=25)
     ap.add_argument("-out", help="Output file name", required=True)
+    ap.add_argument("-target", help="Path to target image to which all others will be aligned", required=True)
     args = vars(ap.parse_args())
 
     MORPH = args["morph"]
@@ -195,19 +208,30 @@ if __name__ == "__main__":
     DURATION = args["td"]
     PAUSE_DURATION = args["pd"]
     OUTPUT_NAME = args["out"]
+    target = args["target"]
 
-    valid_formats = [".jpg", ".jpeg", ".png"]
+    valid_formats = [".jpg", ".jpeg", ".png", ".heic"]
     get_ext = lambda f: os.path.splitext(f)[1].lower()
+
+    print("Loading target image...")
+    filename = os.path.basename(target).split('.')[0]
+    ext = os.path.basename(target).split('.')[1]
+    read_rects = "{}/rects/{}.{}.rects".format(IM_DIR, filename, ext)
+    with open(read_rects, 'rb') as fp:
+        target_rects = pickle.load(fp)
+    rect=target_rects[0]
+    
+    target_rect_center = rect.center()
 
     # Constraints on input images (for morphing):
     # - Must all have same dimension
     # - Must have clear frontal view of a face (there may be multiple)
     # - Filenames must be in lexicographic order of the order in which they are to appear
-
+    print("Finding Images...")
     IM_FILES = [f for f in os.listdir(IM_DIR) if get_ext(f) in valid_formats]
     IM_FILES = sorted(IM_FILES, key=lambda x: x.split('/'))
     assert len(IM_FILES) > 0, "No valid images found in {}".format(IM_DIR)
-
+    print("Loading images...")
     IM_LIST = [cv2.imread(IM_DIR + '/' + f, cv2.IMREAD_COLOR) for f in IM_FILES]
     print("Detecting landmarks...")
     LANDMARK_LIST = [get_landmarks(im) for im in IM_LIST]

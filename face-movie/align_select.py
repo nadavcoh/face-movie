@@ -5,6 +5,7 @@ import dlib
 import numpy as np
 import argparse
 import os
+import pickle
 
 PREDICTOR_PATH = "./shape_predictor_68_face_landmarks.dat"
 
@@ -27,25 +28,12 @@ PREDICTOR = dlib.shape_predictor(PREDICTOR_PATH)
 
 cache = dict()
 
-def prompt_user_to_choose_face(im, rects):
-    im = im.copy()
-    h, w = im.shape[:2]
-    for i in range(len(rects)):
-        d = rects[i]
-        x1, y1, x2, y2 = d.left(), d.top(), d.right()+1, d.bottom()+1
-        cv2.rectangle(im, (x1, y1), (x2, y2), color=(255, 0, 0), thickness=5)
-        cv2.putText(im, str(i), (d.center().x, d.center().y),
-                    fontFace=cv2.FONT_HERSHEY_SCRIPT_SIMPLEX,
-                    fontScale=1.5,
-                    color=(255, 255, 255),
-                    thickness=5)
-
-    DISPLAY_HEIGHT = 650
-    resized = cv2.resize(im, (int(w * DISPLAY_HEIGHT / float(h)), DISPLAY_HEIGHT))
-    cv2.imshow("Multiple faces", resized); cv2.waitKey(1)
+def prompt_user_to_choose_face(im):
+    read_im = cv2.imread(im)
+    cv2.imshow("Multiple faces", read_im); cv2.waitKey(1)
     target_index = int(input("Please choose the index of the target face: "))
     cv2.destroyAllWindows(); cv2.waitKey(1)
-    return rects[target_index]
+    return target_index
 
 def get_landmarks(im):
     rects = DETECTOR(im, 1)
@@ -179,17 +167,21 @@ if __name__ == "__main__":
     valid_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".heic"]
     get_ext = lambda f: os.path.splitext(f)[1].lower()
 
-    prev = None
+    
 
     # Constraints on input images (for aligning):
     # - Must have clear frontal view of a face (there may be multiple)
     # - Filenames must be in lexicographic order of the order in which they are to appear  
     
-    im_files = [f for f in os.listdir(im_dir) if get_ext(f) in valid_formats]
+    im_files = [f for f in os.listdir("{}/annotated/".format(OUTPUT_DIR)) if get_ext(f) in valid_formats]
     im_files = sorted(im_files, key=lambda x: x.split('/'))
+    answers = dict()
     for im in im_files:
-        if overlay:
-            prev = align_images(target, im_dir + '/' + im, border, prev)
-        else:
-            align_images(target, im_dir + '/' + im, border)
-
+        answers[im]=prompt_user_to_choose_face("{}/annotated/{}".format(OUTPUT_DIR, im))
+    write_to = "{}/rects/answers".format(OUTPUT_DIR)
+    if os.path.exists(write_to):
+        print("Error: {} exists".format(write_to))
+    else:
+        with open(write_to, 'wb') as output:
+            pickle.dump(answers, output)
+        print("Wrote {}".format(write_to))

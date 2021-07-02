@@ -1,3 +1,11 @@
 *.pyc
 /faceswap\ \[extra\]/
 shape_predictor_68_face_landmarks.dat
+.vscode/*
+*.jpg
+*.HEIC
+*.rects
+vered*
+.gitignore
+*.txt
+.gitignore
