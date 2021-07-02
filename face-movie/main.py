@@ -106,8 +106,8 @@ def average_images(out_name):
     triangulation = Delaunay(avg_landmarks).simplices
 
     warped_ims = [
-        warp_im(np.float32(IM_LIST[i]), LANDMARK_LIST[i], avg_landmarks, triangulation) 
-        for i in range(len(LANDMARK_LIST))
+        # warp_im(np.float32(IM_LIST[i]), LANDMARK_LIST[i], avg_landmarks, triangulation) 
+        # for i in range(len(LANDMARK_LIST))
     ]
 
     average = (1.0 / len(LANDMARK_LIST)) * sum(warped_ims)
@@ -116,7 +116,8 @@ def average_images(out_name):
     cv2.imwrite(out_name, average)
 
 def morph_images(duration, fps, pause_duration, out_name):
-    first_im = cv2.cvtColor(IM_LIST[0], cv2.COLOR_BGR2RGB)
+    first_im_mat = cv2.imread(IM_DIR + '/' + IM_FILES[0], cv2.IMREAD_COLOR)
+    first_im = cv2.cvtColor(first_im_mat, cv2.COLOR_BGR2RGB)
     h = max(first_im.shape[:2])
     w = min(first_im.shape[:2])    
 
@@ -137,7 +138,7 @@ def morph_images(duration, fps, pause_duration, out_name):
     pause_frames = int(fps * pause_duration)
     fill_frames(Image.fromarray(first_im), pause_frames, p)
 
-    for i in range(len(IM_LIST) - 1):
+    for i in range(len(IM_FILES) - 1):
         print("Morphing {} to {}".format(IM_FILES[i], IM_FILES[i+1]))
         last_frame = morph_pair(i, i+1, duration, fps, out_name, p)
         fill_frames(last_frame, pause_frames, p)
@@ -151,8 +152,11 @@ def morph_pair(idx1, idx2, duration, fps, out_name, stream):
     For a pair of images, produce a morph sequence with the given duration
     and fps to be written to the provided output stream.
     """
-    im1 = IM_LIST[idx1]
-    im2 = IM_LIST[idx2]
+    im1_name = IM_FILES[idx1]
+    im2_name = IM_FILES[idx2]
+
+    im1 = cv2.imread(IM_DIR + '/' + im1_name, cv2.IMREAD_COLOR)
+    im2 = cv2.imread(IM_DIR + '/' + im2_name, cv2.IMREAD_COLOR)
 
     im1_landmarks = LANDMARK_LIST[idx1]
     im2_landmarks = LANDMARK_LIST[idx2]
@@ -231,16 +235,21 @@ if __name__ == "__main__":
     IM_FILES = [f for f in os.listdir(IM_DIR) if get_ext(f) in valid_formats]
     IM_FILES = sorted(IM_FILES, key=lambda x: x.split('/'))
     assert len(IM_FILES) > 0, "No valid images found in {}".format(IM_DIR)
-    print("Loading images...")
-    IM_LIST = [cv2.imread(IM_DIR + '/' + f, cv2.IMREAD_COLOR) for f in IM_FILES]
+    
     print("Detecting landmarks...")
-    LANDMARK_LIST = [get_landmarks(im) for im in IM_LIST]
+    LANDMARK_LIST = []
+    for f in IM_FILES:
+        print(f)
+        current_im = cv2.imread(IM_DIR + '/' + f, cv2.IMREAD_COLOR)
+        LANDMARK_LIST.append(get_landmarks(current_im))
+
+
     print("Starting...")
 
     if MORPH:
         morph_images(DURATION, FRAME_RATE, PAUSE_DURATION, OUTPUT_NAME)
-    else:
-        average_images(OUTPUT_NAME)
+    # else:
+        # average_images(OUTPUT_NAME)
 
     elapsed_time = time.time() - start_time
     print("Time elapsed: {}".format(time.strftime("%H:%M:%S", time.gmtime(elapsed_time))))
