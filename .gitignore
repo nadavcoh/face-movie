@@ -5,7 +5,8 @@ shape_predictor_68_face_landmarks.dat
 *.jpg
 *.HEIC
 *.rects
-vered*
-.gitignore
+*.mp4
+*.log
 *.txt
-.gitignore
+vered*
+*.xcf
