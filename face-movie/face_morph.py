@@ -38,14 +38,23 @@ def morph_triangle(im, im_out, src_tri, dst_tri):
     warpImage1 = affine_transform(cropped_im, cropped_src_tri, cropped_dst_tri, size)
 
     # Copy triangular region of the cropped patch to the output image
-    im_out[dr[1]:dr[1]+dr[3], dr[0]:dr[0]+dr[2]] = \
-        im_out[dr[1]:dr[1]+dr[3], dr[0]:dr[0]+dr[2]] * (1 - mask) + warpImage1 * mask
+    try:
+        im_out[dr[1]:dr[1]+dr[3], dr[0]:dr[0]+dr[2]] = \
+            im_out[dr[1]:dr[1]+dr[3], dr[0]:dr[0]+dr[2]] * (1 - mask) + warpImage1 * mask
+    except ValueError:
+        print("Value Error")
+
+
 
 
 def affine_transform(src, src_tri, dst_tri, size):
     M = cv2.getAffineTransform(np.float32(src_tri), np.float32(dst_tri))
     # BORDER_REFLECT_101 is good for hiding seems
-    dst = cv2.warpAffine(src, M, size, borderMode=cv2.BORDER_REFLECT_101)
+    try:
+        dst = cv2.warpAffine(src, M, size, borderMode=cv2.BORDER_REFLECT_101)
+    except:
+            dst=src
+            print("affine_transform Error")
     return dst        
 
 
