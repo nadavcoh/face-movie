@@ -117,8 +117,31 @@ def align_images(impath1, impath2, border, prev=None):
             borderType=cv2.BORDER_CONSTANT, value=(255,255,255))
 
     warped_im2 = warp_im(im2, M, im1.shape, prev)
-    
-    cv2.imwrite("{}/{}.{}.jpg".format(OUTPUT_DIR, filename,ext), warped_im2)
+    my_text = "{}/{}/{}".format(filename[6:8],filename[4:6],filename[0:4])
+    my_font_face = cv2.FONT_HERSHEY_SCRIPT_SIMPLEX
+    my_font_scale = 2
+    my_font_thickness = 4
+    my_text_size = cv2.getTextSize(my_text, my_font_face, my_font_scale, my_font_thickness)
+
+    warped_im2_with_date = warped_im2.copy()
+    cv2.putText(warped_im2_with_date, 
+                    my_text, 
+                    (0,warped_im2_with_date.shape[0] - my_text_size[1]),
+                    #(0,500),
+                    fontFace=my_font_face,
+                    fontScale=my_font_scale,
+                    color=(0, 0, 0),
+                    thickness=my_font_thickness+15)
+    cv2.putText(warped_im2_with_date, 
+                    my_text, 
+                    (0,warped_im2_with_date.shape[0] - my_text_size[1]),
+                    #(0,500),
+                    fontFace=my_font_face,
+                    fontScale=my_font_scale,
+                    color=(255, 255, 255),
+                    thickness=my_font_thickness)
+
+    cv2.imwrite("{}/{}.{}.jpg".format(OUTPUT_DIR, filename,ext), warped_im2_with_date)
     print("Aligned {}".format(filename))
     return warped_im2
 
